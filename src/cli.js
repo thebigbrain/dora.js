@@ -83,15 +83,11 @@ async function bundle(main, command) {
   // Require bundler here so the help command is fast
   const Bundler = require('./Bundler');
 
-  if (command.name() === 'build') {
-    command.production = true;
-    process.env.NODE_ENV = process.env.NODE_ENV || 'production';
-  } else {
-    process.env.NODE_ENV = process.env.NODE_ENV || 'development';
-  }
+  command.production = true;
+  process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 
   command.throwErrors = false;
-  // command.scopeHoist = command.experimentalScopeHoisting || false;
+  command.scopeHoist = command.experimentalScopeHoisting || false;
 
   const bundler = new Bundler(main, command);
 

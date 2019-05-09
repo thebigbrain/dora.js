@@ -4,10 +4,7 @@ const Parser = require('./Parser');
 const WorkerFarm = require('@parcel/workers');
 const Path = require('path');
 const Bundle = require('./Bundle');
-const Watcher = require('@parcel/watcher');
 const FSCache = require('./FSCache');
-const HMRServer = require('./HMRServer');
-const Server = require('./Server');
 const {EventEmitter} = require('events');
 const logger = require('@parcel/logger');
 const PackagerRegistry = require('./packagers');
@@ -19,7 +16,7 @@ const installPackage = require('./utils/installPackage');
 const bundleReport = require('./utils/bundleReport');
 const prettifyTime = require('./utils/prettifyTime');
 const getRootDir = require('./utils/getRootDir');
-const {glob, isGlob} = require('./utils/glob');
+const {glob} = require('./utils/glob');
 
 /**
  * The Bundler is the main entry point. It resolves and loads assets,
@@ -30,7 +27,6 @@ class Bundler extends EventEmitter {
     super();
 
     entryFiles = Bundler.normalizeEntries(entryFiles);
-    this.watchedGlobs = entryFiles.filter(entry => isGlob(entry));
     this.entryFiles = this.findEntryFiles(entryFiles);
     this.options = this.normalizeOptions(options);
 
@@ -38,7 +34,6 @@ class Bundler extends EventEmitter {
     this.parser = new Parser(this.options);
     this.packagers = new PackagerRegistry(this.options);
     this.cache = this.options.cache ? new FSCache(this.options) : null;
-    this.delegate = options.delegate || {};
     this.bundleLoaders = {};
 
     this.addBundleLoader('wasm', {
@@ -60,15 +55,13 @@ class Bundler extends EventEmitter {
 
     this.pending = false;
     this.loadedAssets = new Map();
-    this.watchedAssets = new Map();
 
     this.farm = null;
-    this.watcher = null;
     this.hmr = null;
-    this.bundleHashes = null;
     this.error = null;
-    this.buildQueue = new PromiseQueue(this.processAsset.bind(this));
-    this.rebuildTimeout = null;
+    this.buildQueue = new PromiseQueue(this.loadAsset.bind(this));
+
+    this.entryAssets = null;
 
     logger.setOptions(this.options);
   }
@@ -224,13 +217,32 @@ class Bundler extends EventEmitter {
     }
   }
 
+  async initialBundle(isInitialBundle) {
+    await fs.mkdirp(this.options.outDir);
+
+    this.entryAssets = new Set();
+    for (let entry of this.entryFiles) {
+      try {
+        let asset = await this.resolveAsset(entry);
+        this.buildQueue.add(asset);
+        this.entryAssets.add(asset);
+      } catch (err) {
+        throw new Error(
+          `Cannot resolve entry "${entry}" from "${this.options.rootDir}"`
+        );
+      }
+    }
+
+    if (this.entryAssets.size === 0) {
+      throw new Error('No entries found.');
+    }
+  }
+
   async bundle() {
     // If another bundle is already pending, wait for that one to finish and retry.
     await this.waitForPending();
 
-    let isInitialBundle = !this.entryAssets;
     let startTime = Date.now();
-    let initialised = !isInitialBundle;
     this.pending = true;
     this.error = null;
 
@@ -245,40 +257,10 @@ class Bundler extends EventEmitter {
       this.emit('buildStart', this.entryFiles);
 
       // If this is the initial bundle, ensure the output directory exists, and resolve the main asset.
-      if (isInitialBundle) {
-        await fs.mkdirp(this.options.outDir);
-
-        this.entryAssets = new Set();
-        for (let entry of this.entryFiles) {
-          try {
-            let asset = await this.resolveAsset(entry);
-            this.buildQueue.add(asset);
-            this.entryAssets.add(asset);
-          } catch (err) {
-            throw new Error(
-              `Cannot resolve entry "${entry}" from "${this.options.rootDir}"`
-            );
-          }
-        }
-
-        if (this.entryAssets.size === 0) {
-          throw new Error('No entries found.');
-        }
-
-        initialised = true;
-      }
+      if (this.entryAssets == null) await this.initialBundle();
 
       // Build the queued assets.
       let loadedAssets = await this.buildQueue.run();
-
-      // The changed assets are any that don't have a parent bundle yet
-      // plus the ones that were in the build queue.
-      let changedAssets = [...this.findOrphanAssets(), ...loadedAssets];
-
-      // Invalidate bundles
-      for (let asset of this.loadedAssets.values()) {
-        asset.invalidateBundle();
-      }
 
       logger.progress(`Producing bundles...`);
 
@@ -293,39 +275,11 @@ class Bundler extends EventEmitter {
         this.mainBundle = Array.from(this.mainBundle.childBundles)[0];
       }
 
-      // Generate the final bundle names, and replace references in the built assets.
-      let numBundles = this.bundleNameMap ? this.bundleNameMap.size : 0;
-      this.bundleNameMap = this.mainBundle.getBundleNameMap(
-        this.options.contentHash
-      );
-
-      for (let asset of changedAssets) {
-        asset.replaceBundleNames(this.bundleNameMap);
-      }
-
-      // Emit an HMR update if this is not the initial bundle.
-      let bundlesChanged = numBundles !== this.bundleNameMap.size;
-      if (this.hmr && !isInitialBundle) {
-        this.hmr.emitUpdate(changedAssets, bundlesChanged);
-      }
-
-      logger.progress(`Packaging...`);
-
-      // Package everything up
-      this.bundleHashes = await this.mainBundle.package(
-        this,
-        bundlesChanged ? null : this.bundleHashes
-      );
-
-      // Unload any orphaned assets
-      this.unloadOrphanedAssets();
-
       let buildTime = Date.now() - startTime;
       let time = prettifyTime(buildTime);
       logger.success(`Built in ${time}.`);
-      if (!this.watcher) {
-        bundleReport(this.mainBundle, this.options.detailedReport);
-      }
+
+      bundleReport(this.mainBundle, this.options.detailedReport);
 
       this.emit('bundled', this.mainBundle);
       return this.mainBundle;
@@ -335,14 +289,6 @@ class Bundler extends EventEmitter {
       logger.error(err);
 
       this.emit('buildError', err);
-
-
-      if (this.options.throwErrors && !this.hmr) {
-        throw err;
-      } else if (!this.options.watch || !initialised) {
-        await this.stop();
-        process.exit(1);
-      }
     } finally {
       this.pending = false;
       this.emit('buildEnd');
@@ -399,37 +345,7 @@ class Bundler extends EventEmitter {
     let asset = this.parser.getAsset(path, this.options);
     this.loadedAssets.set(path, asset);
 
-    this.watch(path, asset);
     return asset;
-  }
-
-  async watch(path, asset) {
-    if (!this.watcher) {
-      return;
-    }
-
-    path = await fs.realpath(path);
-
-    if (!this.watchedAssets.has(path)) {
-      this.watcher.watch(path);
-      this.watchedAssets.set(path, new Set());
-    }
-    this.watchedAssets.get(path).add(asset);
-  }
-
-  async unwatch(path, asset) {
-    path = await fs.realpath(path);
-    if (!this.watchedAssets.has(path)) {
-      return;
-    }
-
-    let watched = this.watchedAssets.get(path);
-    watched.delete(asset);
-
-    if (watched.size === 0) {
-      this.watchedAssets.delete(path);
-      this.watcher.unwatch(path);
-    }
   }
 
   async resolveDep(asset, dep, install = true) {
@@ -466,7 +382,7 @@ class Bundler extends EventEmitter {
           err.message += ` at '${absPath}'`;
         }
 
-        await this.throwDepError(asset, dep, err);
+        await throwDepError(asset, dep, err);
       }
 
       throw err;
@@ -484,34 +400,11 @@ class Bundler extends EventEmitter {
           saveDev: false
         });
       } catch (err) {
-        await this.throwDepError(asset, dep, err);
+        await throwDepError(asset, dep, err);
       }
     }
 
     return this.resolveDep(asset, dep, false);
-  }
-
-  async throwDepError(asset, dep, err) {
-    // Generate a code frame where the dependency was used
-    if (dep.loc) {
-      await asset.loadIfNeeded();
-      err.loc = dep.loc;
-      err = asset.generateErrorMessage(err);
-    }
-
-    err.fileName = asset.name;
-    throw err;
-  }
-
-  async processAsset(asset, isRebuild) {
-    if (isRebuild) {
-      asset.invalidate();
-      if (this.cache) {
-        this.cache.invalidate(asset.name);
-      }
-    }
-
-    await this.loadAsset(asset);
   }
 
   async loadAsset(asset) {
@@ -526,14 +419,9 @@ class Bundler extends EventEmitter {
     // Mark the asset processed so we don't load it twice
     asset.processed = true;
 
-    // First try the cache, otherwise load and compile in the background
+    // load and compile in the background
     asset.startTime = Date.now();
-    let processed = this.cache && (await this.cache.read(asset.name));
-    let cacheMiss = false;
-    if (!processed || asset.shouldInvalidate(processed.cacheData)) {
-      processed = await this.farm.run(asset.name);
-      cacheMiss = true;
-    }
+    let processed = await this.farm.run(asset.name);
 
     asset.endTime = Date.now();
     asset.buildTime = asset.endTime - asset.startTime;
@@ -545,22 +433,13 @@ class Bundler extends EventEmitter {
 
     // Call the delegate to get implicit dependencies
     let dependencies = processed.dependencies;
-    if (this.delegate.getImplicitDependencies) {
-      let implicitDeps = await this.delegate.getImplicitDependencies(asset);
-      if (implicitDeps) {
-        dependencies = dependencies.concat(implicitDeps);
-      }
-    }
+
+    console.log(dependencies);
 
     // Resolve and load asset dependencies
     let assetDeps = await Promise.all(
       dependencies.map(async dep => {
-        if (dep.includedInParent) {
-          // This dependency is already included in the parent's generated output,
-          // so no need to load it. We map the name back to the parent asset so
-          // that changing it triggers a recompile of the parent.
-          this.watch(dep.name, asset);
-        } else {
+        if (!dep.includedInParent) {
           dep.parent = asset.name;
           let assetDep = await this.resolveDep(asset, dep);
           if (assetDep) {
@@ -590,10 +469,6 @@ class Bundler extends EventEmitter {
     });
 
     logger.verbose(`Built ${asset.relativeName}...`);
-
-    if (this.cache && cacheMiss) {
-      this.cache.write(asset.name, processed);
-    }
   }
 
   createBundleTree(asset, bundle, dep, parentBundles = new Set()) {
@@ -708,102 +583,20 @@ class Bundler extends EventEmitter {
       }
     }
   }
-
-  * findOrphanAssets() {
-    for (let asset of this.loadedAssets.values()) {
-      if (!asset.parentBundle) {
-        yield asset;
-      }
-    }
-  }
-
-  unloadOrphanedAssets() {
-    for (let asset of this.findOrphanAssets()) {
-      this.unloadAsset(asset);
-    }
-  }
-
-  unloadAsset(asset) {
-    this.loadedAssets.delete(asset.name);
-    if (this.watcher) {
-      this.unwatch(asset.name, asset);
-
-      // Unwatch all included dependencies that map to this asset
-      for (let dep of asset.dependencies.values()) {
-        if (dep.includedInParent) {
-          this.unwatch(dep.name, asset);
-        }
-      }
-    }
-  }
-
-  async onAdd(path) {
-    path = Path.join(process.cwd(), path);
-
-    let asset = this.parser.getAsset(path, this.options);
-    this.loadedAssets.set(path, asset);
-
-    this.entryAssets.add(asset);
-
-    await this.watch(path, asset);
-    this.onChange(path);
-  }
-
-  async onChange(path) {
-    // The path to the newly-added items are not absolute.
-    if (!Path.isAbsolute(path)) {
-      path = Path.resolve(process.cwd(), path);
-    }
-
-    let assets = this.watchedAssets.get(path);
-    if (!assets || !assets.size) {
-      return;
-    }
-
-    logger.clear();
-    logger.progress(`Building ${Path.basename(path)}...`);
-
-    // Add the asset to the rebuild queue, and reset the timeout.
-    for (let asset of assets) {
-      this.buildQueue.add(asset, true);
-    }
-
-    clearTimeout(this.rebuildTimeout);
-
-    this.rebuildTimeout = setTimeout(async () => {
-      await this.bundle();
-    }, 100);
-  }
-
-  async onUnlink(path) {
-    // The path to the newly-added items are not absolute.
-    if (!Path.isAbsolute(path)) {
-      path = Path.resolve(process.cwd(), path);
-    }
-
-    let asset = this.getLoadedAsset(path);
-    this.entryAssets.delete(asset);
-    this.unloadAsset(asset);
-
-    this.bundle();
-  }
-
-  middleware() {
-    this.bundle();
-    return Server.middleware(this);
-  }
-
-  async serve(port = 1234, https = false, host) {
-    this.server = await Server.serve(this, port, host, https);
-    try {
-      await this.bundle();
-    } catch (e) {
-      // ignore: server can still work with errored bundler
-    }
-    return this.server;
-  }
 }
 
 module.exports = Bundler;
 Bundler.Asset = require('./Asset');
 Bundler.Packager = require('./packagers/Packager');
+
+async function throwDepError(asset, dep, err) {
+  // Generate a code frame where the dependency was used
+  if (dep.loc) {
+    await asset.loadIfNeeded();
+    err.loc = dep.loc;
+    err = asset.generateErrorMessage(err);
+  }
+
+  err.fileName = asset.name;
+  throw err;
+}

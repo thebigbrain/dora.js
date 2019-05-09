@@ -47,7 +47,7 @@ function bundleReport(mainBundle, detailed = false) {
       for (let asset of largestAssets) {
         // Add a row for the asset.
         rows.push([
-          (asset == assets[assets.length - 1] ? '└── ' : '├── ') +
+          (asset === assets[assets.length - 1] ? '└── ' : '├── ') +
           formatFilename(asset.name, logger.chalk.reset),
           logger.chalk.dim(prettifySize(asset.bundledSize)),
           logger.chalk.dim(logger.chalk.green(prettifyTime(asset.buildTime)))

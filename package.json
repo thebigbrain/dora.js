@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "cli": "node ./bin/cli.js"
+    "cli": "node ./bin/cli.js",
+    "debug": "node ./bin/cli.js build ./tests/entry.js"
   },
   "repository": {
     "type": "git",
@@ -25,13 +26,40 @@
   },
   "homepage": "https://github.com/thebigbrain/dora.js#readme",
   "dependencies": {
+    "@babel/code-frame": "latest",
+    "@babel/core": "^7.4.4",
+    "@babel/generator": "latest",
+    "@babel/parser": "latest",
+    "@babel/plugin-transform-modules-commonjs": "latest",
+    "@babel/preset-env": "^7.4.4",
+    "@babel/template": "^7.4.4",
+    "@babel/traverse": "^7.4.4",
+    "@babel/types": "^7.4.4",
+    "@iarna/toml": "^2.2.3",
+    "@parcel/fs": "^1.11.0",
     "@parcel/logger": "^1.11.0",
-    "chalk": "^2.4.2",
-    "commander": "^2.20.0",
-    "v8-compile-cache": "^2.0.2",
-    "@parcel/fs": "latest",
-    "clone": "latest",
+    "@parcel/utils": "latest",
     "@parcel/workers": "latest",
-    "@parcel/utils": "latest"
+    "babylon-walk": "^1.0.2",
+    "chalk": "^2.4.2",
+    "clone": "latest",
+    "command-exists": "^1.2.8",
+    "commander": "^2.20.0",
+    "cross-spawn": "^6.0.5",
+    "deasync": "^0.1.15",
+    "dotenv": "^8.0.0",
+    "dotenv-expand": "^5.1.0",
+    "fast-glob": "^2.2.6",
+    "filesize": "^4.1.2",
+    "is-glob": "^4.0.1",
+    "is-url": "^1.2.4",
+    "json5": "^2.1.0",
+    "micromatch": "^4.0.2",
+    "node-libs-browser": "^2.2.0",
+    "posthtml": "^0.11.4",
+    "semver": "^6.0.0",
+    "terser": "^3.17.0",
+    "v8-compile-cache": "^2.0.2",
+    "@babel/plugin-transform-react-jsx": "latest"
   }
 }
