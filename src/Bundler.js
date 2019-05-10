@@ -18,6 +18,19 @@ const prettifyTime = require('./utils/prettifyTime');
 const getRootDir = require('./utils/getRootDir');
 const {glob} = require('./utils/glob');
 
+
+async function throwDepError(asset, dep, err) {
+  // Generate a code frame where the dependency was used
+  if (dep.loc) {
+    await asset.loadIfNeeded();
+    err.loc = dep.loc;
+    err = asset.generateErrorMessage(err);
+  }
+
+  err.fileName = asset.name;
+  throw err;
+}
+
 /**
  * The Bundler is the main entry point. It resolves and loads assets,
  * creates the bundle tree, and manages the worker farm, cache, and file watcher.
@@ -434,20 +447,20 @@ class Bundler extends EventEmitter {
     // Call the delegate to get implicit dependencies
     let dependencies = processed.dependencies;
 
-    console.log(dependencies);
+    // console.log(dependencies);
 
     // Resolve and load asset dependencies
     let assetDeps = await Promise.all(
       dependencies.map(async dep => {
-        if (!dep.includedInParent) {
-          dep.parent = asset.name;
-          let assetDep = await this.resolveDep(asset, dep);
-          if (assetDep) {
-            await this.loadAsset(assetDep);
-          }
+        if (dep.includedInParent) return null;
 
-          return assetDep;
+        dep.parent = asset.name;
+        let assetDep = await this.resolveDep(asset, dep);
+        if (assetDep) {
+          await this.loadAsset(assetDep);
         }
+
+        return assetDep;
       })
     );
 
@@ -588,15 +601,3 @@ class Bundler extends EventEmitter {
 module.exports = Bundler;
 Bundler.Asset = require('./Asset');
 Bundler.Packager = require('./packagers/Packager');
-
-async function throwDepError(asset, dep, err) {
-  // Generate a code frame where the dependency was used
-  if (dep.loc) {
-    await asset.loadIfNeeded();
-    err.loc = dep.loc;
-    err = asset.generateErrorMessage(err);
-  }
-
-  err.fileName = asset.name;
-  throw err;
-}

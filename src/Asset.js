@@ -88,6 +88,10 @@ class Asset {
     }
   }
 
+  addDoraDependency(name, opts) {
+    this.doraDependencies.set(name, Object.assign({name}, opts));
+  }
+
   addDependency(name, opts) {
     this.dependencies.set(name, Object.assign({name}, opts));
   }
@@ -155,7 +159,7 @@ class Asset {
     if (conf) {
       // Add as a dependency so it is added to the watcher and invalidates
       // this asset when the config changes.
-      this.addDependency(conf, {includedInParent: true});
+      // this.addDependency(conf, {includedInParent: true});
       if (opts.load === false) {
         return conf;
       }

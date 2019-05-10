@@ -98,8 +98,8 @@ function mergeConfigs(result, config) {
     return;
   }
 
-  let merged = result[config.babelVersion];
-  if (merged) {
+  let merged = result;
+  if (merged.config) {
     merged.config.presets = (merged.config.presets || []).concat(
       config.config.presets || []
     );
@@ -107,7 +107,7 @@ function mergeConfigs(result, config) {
       config.config.plugins || []
     );
   } else {
-    result[config.babelVersion] = config;
+    Object.assign(result, config);
   }
 }
 

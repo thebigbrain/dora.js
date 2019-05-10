@@ -48,23 +48,6 @@ module.exports = {
       return;
     }
 
-    let isDynamicImport =
-      callee.type === 'Import' &&
-      args.length === 1 &&
-      types.isStringLiteral(args[0]);
-
-    if (isDynamicImport) {
-      if (isURL(args[0].value)) return;
-
-      asset.addDependency('_bundle_loader');
-      addDependency(asset, args[0], {dynamic: true});
-
-      node.callee = requireTemplate().expression;
-      node.arguments[0] = argTemplate({MODULE: args[0]}).expression;
-      asset.isAstDirty = true;
-      return;
-    }
-
     const isRegisterServiceWorker =
       types.isStringLiteral(args[0]) &&
       types.matchesPattern(callee, serviceWorkerPattern);
@@ -152,29 +135,10 @@ function evaluateExpression(node) {
 }
 
 function addDependency(asset, node, opts = {}) {
-  // Don't bundle node builtins
-  if (asset.options.target === 'node' && node.value in nodeBuiltins) {
-    return;
+  const isRelativeImport = /^[/~.]/.test(node.value);
+  if (isRelativeImport) {
+    opts.loc = node.loc && node.loc.start;
   }
-
-  // If this came from an inline <script> tag, throw an error.
-  // TODO: run JSPackager on inline script tags.
-  let inlineHTML =
-    asset.options.rendition && asset.options.rendition.inlineHTML;
-  if (inlineHTML) {
-    let err = new Error(
-      'Imports and requires are not supported inside inline <script> tags yet.'
-    );
-    err.loc = node.loc && node.loc.start;
-    throw err;
-  }
-
-  if (!asset.options.bundleNodeModules) {
-    const isRelativeImport = /^[/~.]/.test(node.value);
-    if (!isRelativeImport) return;
-  }
-
-  opts.loc = node.loc && node.loc.start;
   asset.addDependency(node.value, opts);
 }
 

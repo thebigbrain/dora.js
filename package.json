@@ -24,6 +24,9 @@
   "bugs": {
     "url": "https://github.com/thebigbrain/dora.js/issues"
   },
+  "bin": {
+    "dora": "bin/cli.js"
+  },
   "homepage": "https://github.com/thebigbrain/dora.js#readme",
   "dependencies": {
     "@babel/code-frame": "latest",
@@ -31,6 +34,7 @@
     "@babel/generator": "latest",
     "@babel/parser": "latest",
     "@babel/plugin-transform-modules-commonjs": "latest",
+    "@babel/plugin-transform-react-jsx": "latest",
     "@babel/preset-env": "^7.4.4",
     "@babel/template": "^7.4.4",
     "@babel/traverse": "^7.4.4",
@@ -46,6 +50,7 @@
     "command-exists": "^1.2.8",
     "commander": "^2.20.0",
     "cross-spawn": "^6.0.5",
+    "css-modules-loader-core": "^1.1.0",
     "deasync": "^0.1.15",
     "dotenv": "^8.0.0",
     "dotenv-expand": "^5.1.0",
@@ -56,10 +61,11 @@
     "json5": "^2.1.0",
     "micromatch": "^4.0.2",
     "node-libs-browser": "^2.2.0",
+    "postcss": "^7.0.16",
+    "postcss-value-parser": "^3.3.1",
     "posthtml": "^0.11.4",
     "semver": "^6.0.0",
     "terser": "^3.17.0",
-    "v8-compile-cache": "^2.0.2",
-    "@babel/plugin-transform-react-jsx": "latest"
+    "v8-compile-cache": "^2.0.2"
   }
 }

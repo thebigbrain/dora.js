@@ -1,14 +1,10 @@
-const localRequire = require('../../utils/localRequire');
+const babel = require('@babel/core');
 
 async function babel7(asset, options) {
-  let config = options.config;
+  let config = options.config || {};
 
   // If this is an internally generated config, use our internal @babel/core,
   // otherwise require a local version from the package we're compiling.
-  let babel = options.internal
-    ? require('@babel/core')
-    : await localRequire('@babel/core', asset.name);
-
   let pkg = await asset.getPackage();
 
   config.code = false;
@@ -19,9 +15,18 @@ async function babel7(asset, options) {
   config.configFile = false;
   config.parserOpts = Object.assign({}, config.parserOpts, {
     allowReturnOutsideFunction: true,
-    strictMode: false,
+    strictMode: true,
     sourceType: 'module',
-    plugins: ['dynamicImport']
+    plugins: [
+      "@babel/plugin-transform-runtime",
+      {
+        "absoluteRuntime": false,
+        "corejs": false,
+        "helpers": true,
+        "regenerator": true,
+        "useESModules": false
+      }
+    ]
   });
 
   let res;
