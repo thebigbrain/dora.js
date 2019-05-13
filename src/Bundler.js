@@ -288,10 +288,17 @@ class Bundler extends EventEmitter {
         this.mainBundle = Array.from(this.mainBundle.childBundles)[0];
       }
 
+      // Package everything up
+      // this.bundleHashes = await this.mainBundle.package(
+      //   this,
+      //   this.bundleHashes
+      // );
+
       let buildTime = Date.now() - startTime;
       let time = prettifyTime(buildTime);
       logger.success(`Built in ${time}.`);
 
+      // this.options.detailedReport = true;
       bundleReport(this.mainBundle, this.options.detailedReport);
 
       this.emit('bundled', this.mainBundle);

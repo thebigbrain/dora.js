@@ -44,8 +44,8 @@ class Bundle {
     asset.bundles.add(this);
     this.assets.add(asset);
     if (
-      this.type != 'map' &&
-      this.type == asset.type &&
+      this.type !== 'map' &&
+      this.type === asset.type &&
       asset.options.sourceMaps &&
       asset.sourceMaps
     ) {
@@ -123,7 +123,7 @@ class Bundle {
     // If content hashing is enabled, generate a hash from all assets in the bundle.
     // Otherwise, use a hash of the filename so it remains consistent across builds.
 
-    if (this.type == 'map') {
+    if (this.type === 'map') {
       return this.parentBundle.getHashedBundleName(contentHash) + '.map';
     }
 
@@ -180,7 +180,7 @@ class Bundle {
 
   async package(bundler, oldHashes, newHashes = new Map()) {
     let promises = [];
-    let mappings = [];
+    // let mappings = [];
 
     if (!this.isEmpty) {
       let hash = this.getHash();
@@ -193,16 +193,17 @@ class Bundle {
 
     for (let bundle of this.childBundles.values()) {
       if (bundle.type === 'map') {
-        mappings.push(bundle);
+        // skip map
+        // mappings.push(bundle);
       } else {
         promises.push(bundle.package(bundler, oldHashes, newHashes));
       }
     }
 
     await Promise.all(promises);
-    for (let bundle of mappings) {
-      await bundle.package(bundler, oldHashes, newHashes);
-    }
+    // for (let bundle of mappings) {
+    //   await bundle.package(bundler, oldHashes, newHashes);
+    // }
     return newHashes;
   }
 
